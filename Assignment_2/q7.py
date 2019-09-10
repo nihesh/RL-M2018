@@ -8,13 +8,15 @@ This module implements policy iteration algorithm.
 import numpy as np
 import scipy.stats
 import pickle
+from mpl_toolkits import mplot3d
+from matplotlib import pyplot as plt
 
-MAX_STATE = 4
+MAX_STATE = 20
 MAX_CARS = 3
 GAMMA = 0.9
-MAX_ACTION = 2
-MAX_PARKING_SPACE = 2
-MEAN_POISSON = [1, 2, 1, 2]
+MAX_ACTION = 5
+MAX_PARKING_SPACE = 10
+MEAN_POISSON = [3, 3, 4, 2]
 
 class MDP:
 
@@ -112,8 +114,8 @@ class MDP:
 		next_state[1] = min(MAX_STATE - 1, next_state[1] + second_location[1])
 
 		# Parking charges
-		cost -= 4 * max(0, next_state[0] - MAX_PARKING_SPACE)
-		cost -= 4 * max(0, next_state[1] - MAX_PARKING_SPACE)
+		cost -= 4 * min(1, max(0, next_state[0] - MAX_PARKING_SPACE))
+		cost -= 4 * min(1, max(0, next_state[1] - MAX_PARKING_SPACE))
 
 		return next_state, cost
 
@@ -196,5 +198,39 @@ if(__name__ == "__main__"):
 	print("Action space")
 	for i in range(MAX_STATE):
 		for j in range(MAX_STATE):
-			print("Action space",i,j,env.action_probability[i][j])
+			print(np.argmax(env.action_probability[i][j]) - MAX_ACTION, end = " ")
+		print()
 
+	data = []
+	for i in range(MAX_STATE):
+		for j in range(MAX_STATE):
+			data.append([i, j, value_function[i][j]])
+	data = np.asarray(data)
+
+	fig = plt.figure()
+	ax = plt.axes(projection="3d")
+	ax.set_xlabel("cars at first location")
+	ax.set_ylabel("cars at second location")
+	ax.set_zlabel("value function")
+	ax.plot_trisurf(data[:,0], data[:,1], data[:,2])
+	fig.savefig("q7_plot.jpg")
+
+	data = np.zeros([MAX_STATE, MAX_STATE]).astype(int)
+	for i in range(MAX_STATE):
+		for j in range(MAX_STATE):
+			data[j][i] = np.argmax(env.action_probability[i][j]) - MAX_ACTION
+
+	plt.clf()
+	fig, ax = plt.subplots()
+	ax.imshow(data)
+	x = [i for i in range(len(data))]
+	ax.set_xticks(np.arange(len(x)))
+	ax.set_yticks(np.arange(len(x)))
+	ax.set_xticklabels(x)
+	ax.set_yticklabels(x)
+	ax.set_xlabel("second location")
+	ax.set_ylabel("first location")
+	for i in range(data.shape[0]):
+		for j in range(data.shape[1]):
+			ax.text(i, j, str(data[i][j]), ha = "center", va = "center", color = "w")
+	fig.savefig("q7_action.jpg")
