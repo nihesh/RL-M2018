@@ -6,161 +6,125 @@ from copy import deepcopy
 import numpy as np
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot as plt
+import seaborn as sns
 
-EPOCHS = 100000
+EPOCHS = 1000
 ALPHA = 0.01
-BLUR = 10
-EPS = 0.1
+EPS = 0.01
+FILTER = 5
 
 class MDP:
 
 	def __init__(self):
 
+		self.action_space = np.asarray([[-1, 0], [1, 0], [0, -1], [0, 1]]).astype(int)
 		self.reset()
 
 	def reset(self):
 
-		# index 0 is the face up card. Random numbers are drawn till 12 to simulate face cards
-		self.dealer = []
-		self.dealer.append(min(10, random.randint(1, 12)))
-		self.dealer.append(min(10, random.randint(1, 12)))
+		self.world = np.zeros([7, 6])
+		for i in range(1, 6, 2):
+			for j in range(6):
+				self.world[i][j] = 1
+		self.world[1][2] = self.world[1][4] = 0
+		self.world[3][2] = self.world[3][5] = 0
+		self.world[5][3] = self.world[5][0] = 0
 
-		self.player = []
-		self.player.append(min(10, random.randint(1, 12)))
-		self.player.append(min(10, random.randint(1, 12)))
-		while(self.value(self.player, False) < 12):
-			self.player.append(min(10, random.randint(1, 12)))
+		self.now = np.zeros(2).astype(int)
+		
+	def cur_state(self):
 
-	def init_state(self):
-
-		return [self.player_value(), self.dealer[0], self.has_ace()]
-
-	def player_value(self):
-
-		return self.value(self.player, True)
-
-	def has_ace(self):
-
-		for val in self.player:
-			if(val == 1):
-				return 1
-		return 0
-
-	def value(self, player, count_ace):
-
-		cur_sum = 0
-		ace = False
-		for val in player:
-			if(val == 1):
-				ace = True
-			cur_sum += val
-		if(ace and count_ace and cur_sum + 10 <= 21):
-			cur_sum += 10
-		return cur_sum
+		return self.now
 
 	def play(self, action):
 
-		if(self.player_value() == 21):
-
-			# Win on deck
-			to_return = deepcopy(([22, self.dealer[0], self.has_ace()], self.value(self.dealer, True) != 21, True))
-			self.reset()
-			return to_return
-
-		if(action):
-			self.player.append(min(10, random.randint(1, 12)))
-			if(self.player_value() > 21):
-				# player exceeds limit
-				to_return = deepcopy(([22, self.dealer[0], self.has_ace()], -1, True))
-				self.reset()
-				return to_return
-			else:
-				return [self.player_value(), self.dealer[0], self.has_ace()], 0, False
+		next_state = self.now + self.action_space[action]
+		if(next_state[0] < 0 or next_state[0] >= 7 or next_state[1] < 0 or next_state[1] >= 6):
+			next_state = self.now
+		
+		self.now = next_state
+		if(self.now[0] == 6 and self.now[1] == 5):
+			return self.now, 11, True
 		else:
-			while(self.value(self.dealer, True) < 17):
-				self.dealer.append(min(10, random.randint(1, 12)))
-			
-			# Identifying the player with high value
-			if(self.value(self.dealer, True) > 21 or self.value(self.dealer, True) < self.player_value()):
-				to_return = deepcopy(([22, self.dealer[0], self.has_ace()], 1, True))
-			elif(self.value(self.dealer, True) == self.player_value()):
-				to_return = deepcopy(([22, self.dealer[0], self.has_ace()], 0, True))
-			else:
-				to_return = deepcopy(([22, self.dealer[0], self.has_ace()], -1, True))
-
-			self.reset()
-			return to_return
-
+			return self.now, -1, False
 
 
 if(__name__ == "__main__"):
 
 	model = MDP()
-	Q = np.zeros([31, 11, 2, 2])
-
-	tot_reward = []
+	Q = np.zeros([7, 6, 4])
 	
+	cum_reward = []
+
 	for i in range(EPOCHS):
 
-		cur_state = model.init_state()
-		action = np.argmax(Q[cur_state[0], cur_state[1], cur_state[2]])
-		rng = random.uniform(0, 1)
-		if(rng < EPS):
-			action = random.randint(0, 1)
+		model.reset()
 		done = False
-		sum_reward = 0
+		tot_reward = 0
 
 		while(not done):
-			next_state, reward, done = model.play(action)
-			sum_reward += reward
-			Q[cur_state[0], cur_state[1], cur_state[2]] = (1 - ALPHA) * Q[cur_state[0], cur_state[1], cur_state[2]] + (ALPHA) * np.max(reward + Q[next_state[0], next_state[1], next_state[2]])
 
-			cur_state = next_state
-			action = np.argmax(Q[cur_state[0], cur_state[1], cur_state[2]])
+			cur_state = model.cur_state()
+			action = np.argmax(Q[cur_state[0], cur_state[1]])
 			rng = random.uniform(0, 1)
 			if(rng < EPS):
-				action = random.randint(0, 1)
+				action = random.randint(0, 3)
 
-		tot_reward.append(sum_reward)
+			next_state, reward, done = model.play(action)
+			Q[cur_state[0], cur_state[1], action] = (1 - ALPHA) * Q[cur_state[0], cur_state[1], action] + ALPHA * (reward + np.max(Q[next_state[0], next_state[1]]))
 
-	for i in range(len(tot_reward)):
-		tot_reward[i] = np.mean(tot_reward[i : i + BLUR])
+			tot_reward += reward
 
-	plt.clf()
+		cum_reward.append(tot_reward)
 
-	X_axis = []
-	Y_axis = []
-	Z_axis = []
+	X_axis = [i for i in range(len(cum_reward))]
+	for i in range(len(cum_reward)):
+		cum_reward[i] = np.mean(cum_reward[i : i + FILTER])
 
-	for i in range(1, 11):
-		for j in range(12, 22):
-			X_axis.append(i)
-			Y_axis.append(j)
-			Z_axis.append(np.max(Q[j][i][0]))
+	plt.plot(X_axis, cum_reward, label = "Q learning")
+	plt.xlabel("Epochs")
+	plt.ylabel("Total reward - (-1 for a step and 11 for reaching goal state 6,5)")
+	
+	model = MDP()
+	Q = np.zeros([7, 6, 4])
+	
+	cum_reward = []
 
-	fig = plt.figure()
-	ax = plt.axes(projection="3d")
-	ax.set_xlabel("Dealer showing")
-	ax.set_ylabel("Player sum")
-	ax.set_zlabel("Value function")
-	ax.plot_trisurf(X_axis, Y_axis, Z_axis)
-	fig.savefig("./Results/Q7/No_usable_ace_plot.jpg")
+	for i in range(EPOCHS):
 
-	X_axis = []
-	Y_axis = []
-	Z_axis = []
+		model.reset()
+		done = False
+		tot_reward = 0
 
-	for i in range(1, 11):
-		for j in range(12, 22):
-			X_axis.append(i)
-			Y_axis.append(j)
-			Z_axis.append(np.max(Q[j][i][1]))
+		backup_Q = Q
 
-	plt.clf()
-	fig = plt.figure()
-	ax = plt.axes(projection="3d")
-	ax.set_xlabel("Dealer showing")
-	ax.set_ylabel("Player sum")
-	ax.set_zlabel("Value function")
-	ax.plot_trisurf(X_axis, Y_axis, Z_axis)
-	fig.savefig("./Results/Q7/Usable_ace_plot.jpg")
+		while(not done):
+
+			cur_state = model.cur_state()
+			action = np.argmax(backup_Q[cur_state[0], cur_state[1]])
+			rng = random.uniform(0, 1)
+			if(rng < EPS):
+				action = random.randint(0, 3)
+
+			next_state, reward, done = model.play(action)
+			next_Q_value = 0
+			if(not done):
+				action_new = np.argmax(backup_Q[next_state[0], next_state[1]])
+				rng = random.uniform(0, 1)
+				if(rng < EPS):
+					action_new = random.randint(0, 3)
+				next_Q_value = backup_Q[next_state[0], next_state[1]][action_new]
+
+			Q[cur_state[0], cur_state[1], action] = (1 - ALPHA) * Q[cur_state[0], cur_state[1], action] + ALPHA * (reward + next_Q_value)
+
+			tot_reward += reward
+
+		cum_reward.append(tot_reward)
+
+	X_axis = [i for i in range(len(cum_reward))]
+	for i in range(len(cum_reward)):
+		cum_reward[i] = np.mean(cum_reward[i : i + FILTER])
+
+	plt.plot(X_axis, cum_reward, label = "SARSA")
+	plt.legend()
+	plt.savefig("./Results/Q7/reward.jpg")
